@@ -1,0 +1,11 @@
+<stack>
+  <description brief="targeting">targeting</description>
+  <author>Maintained by </author>
+  <license>BSD</license>  
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/targeting</url>
+  <depend stack="ros" />
+
+  <depend stack="driver_common"/>
+
+</stack>

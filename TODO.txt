@@ -1,0 +1,2 @@
+Update deps in stack.xml
+Update version in stack.xml

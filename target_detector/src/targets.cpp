@@ -93,6 +93,37 @@ class TargetsDetector {
             }
             *stack++ = -1;
 
+            // fit ellipses
+            std::vector<cv::Point> points;
+            std::list<cv::RotatedRect> ellipses;
+            for( int i=0; 
+                  i < endBound && (contours[i] >= 0 || contours[i+1] >= 0);
+                  i++ ) {
+               if( contours[i] >= 0 ) {
+                  // another point. add it
+                  int j = contours[i] / width;
+                  int k = contours[i] % width;
+                  points.push_back(cv::Point(k, j));
+               } else {
+                  // fit ellipse; need at least 5 points
+                  if( points.size() >= 5 ) {
+                     cv::RotatedRect ellipse = cv::fitEllipse(cv::Mat(points));
+                     cv::Point2f center = ellipse.center;
+                     /*
+                     printf("Fitted ellipse at (%03.5f, %03.5f)\n", 
+                           center.x, center.y);
+                           */
+                     // TODO: determine quality of fit; either write custom
+                     // fitting algorithm or measure fit.
+                     // TODO: only consider ellipses that fit "well"
+                     ellipses.push_back(ellipse);
+                  }
+
+                  points.clear();
+               }
+            }
+            //printf("\n");
+
             //printf("% 6d groups\n", groups);
 
             // generate colors
@@ -136,6 +167,16 @@ class TargetsDetector {
                } else {
                   color++;
                }
+            }
+
+            // overlay ellipses
+            for( std::list<cv::RotatedRect>::iterator itr = ellipses.begin();
+                  itr != ellipses.end(); itr++ ) {
+               cv::Size size;
+               size.width = round(itr->size.width * 0.5);
+               size.height = round(itr->size.height * 0.5);
+               cv::ellipse(out.image, itr->center, size, 
+                     itr->angle, 0, 360, CV_RGB(255, 255, 255), 1, CV_AA, 0);
             }
 
             image_pub_.publish(out.toImageMsg());

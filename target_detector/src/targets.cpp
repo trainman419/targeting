@@ -49,15 +49,14 @@ class TargetsDetector {
 
             // detect edges in input image
             cv::Mat edges;
-            // TODO: use dynamic-reconfigure to set parameters for this
             cv::Canny(cv_ptr->image, edges, t1, t2);
 
-            //ROS_INFO("Edge detector complete; size %d x %d", edges.cols, edges.rows);
             // loop on pixels in edge image
             int i, j;
             cv::Mat groups(edges.rows, edges.cols, CV_32S);
             std::map<int, int> group_num;
             int group = 0;
+            int count = 0;
             group_num[0] = 0; // no group
 
             ROS_ASSERT(edges.type() == CV_8U);
@@ -70,6 +69,7 @@ class TargetsDetector {
                for( j=0; j<edges.cols; j++) {
                   group_row[j] = 0;
                   if( row[j] ) {
+                     count++;
                      // if the previous pixel in this row is set, add us to 
                      //  that group
                      if( j>0 && row[j-1] ) {
@@ -84,9 +84,7 @@ class TargetsDetector {
                         // above
                         else if( row_b[j] ) f = j;
                         // above right. BUG here?
-                        else if( j<(edges.cols-1) && row_b[j+1] ) {
-                           f = j+1;
-                        }
+                        else if( j<(edges.cols-1) && row_b[j+1] ) f = j+1;
 
                         if( f > -1 ) {
                            int g = groups.at<int>(i-1, f);
@@ -103,6 +101,18 @@ class TargetsDetector {
                            }
                         }
 
+                        if( j<(edges.cols-1) && row_b[j+1] && f == j-1 ) {
+                           printf(".");
+                           int g1 = groups.at<int>(i-1, j-1);
+                           int g2 = groups.at<int>(i-1, j+1);
+                           int g3 = group_row[j];
+                           int n = group_num[g1];
+                           n = n < group_num[g2] ? n : group_num[g2];
+                           n = n < group_num[g3] ? n : group_num[g3];
+                           group_num[g1] = n;
+                           group_num[g2] = n;
+                           group_num[g3] = n;
+                        }
                      } 
 
                      // if we didn't find a group, create a new one
@@ -114,9 +124,12 @@ class TargetsDetector {
                   }
                }
             }
+            printf("\n");
+
+            printf("% 6d edge points\n", count);
 
             // count the number of resulting groups
-            //printf("% 6zd initial groups\n", group_num.size());
+            printf("% 6zd initial groups\n", group_num.size());
             std::set<int> final_groups;
             for( std::map<int, int>::iterator itr = group_num.begin(); 
                   itr != group_num.end(); itr++ ) {
@@ -130,7 +143,7 @@ class TargetsDetector {
                }
                final_groups.insert(itr->second);
             }
-            //printf("% 6zd condensed groups\n", final_groups.size());
+            printf("% 6zd condensed groups\n", final_groups.size());
 
             // generate colors
             std::map<int, cv::Vec3b> colors;

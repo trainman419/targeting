@@ -56,13 +56,10 @@ class TargetsDetector {
             cv::Mat edges;
             cv::Canny(cv_ptr->image, edges, t1, t2);
 
-            // loop on pixels in edge image
-
-
             // Grouping algorithm by Michael LeKander <michaelll@michaelll.com>
             int groups = 0;
             int i, o, endBound = edges.rows * edges.cols;
-            int * contours = (int*)malloc(sizeof(int)*endBound + 1);
+            int * contours = (int*)malloc((sizeof(int)*endBound) + 2);
             int *stack = contours, *queue = contours;
             uchar * isWhite = edges.data;
             int width = edges.cols;
@@ -89,154 +86,19 @@ class TargetsDetector {
                      }
                   }
 
-                  *stack++ = INT_MAX;
+                  *stack++ = -1;
                   queue++;
                   groups++;
                }
             }
+            *stack++ = -1;
 
-            printf("% 6d groups\n", groups);
-
-            /*
-            int i, j;
-            uchar * row = 0;
-            int count = 0;
-            for( i=0; i<edges.rows; i++) {
-               row = edges.ptr<uchar>(i);
-               for( j=0; j<edges.cols; j++) {
-                  if( row[j] ) count++;
-               }
-            }
-
-
-            int id = 0;
-            // position of each node
-            std::vector<std::pair<int, int> > position(count);
-            // neighbor ids for each node
-            std::vector<std::list<int> > neighbors(count);
-            // set of all node ids (for later)
-            std::set<int> nodes;
-            // image-coordinate to ID map
-            cv::Mat ids(edges.rows, edges.cols, CV_32S);
-
-            ROS_ASSERT(edges.type() == CV_8U);
-            uchar * row_b = 0;
-            int * ids_row;
-            // for each pixel
-            for( i=0; i<edges.rows; i++) {
-               row_b = row;
-               row = edges.ptr<uchar>(i);
-               ids_row = ids.ptr<int>(i);
-               for( j=0; j<edges.cols; j++) {
-                  ids_row[j] = -1;
-                  if( row[j] ) {
-                     // set ID into image
-                     ids_row[j] = id;
-                     // add to node set
-                     nodes.insert(id);
-                     // set position
-                     position[id] = std::pair<int, int>(i, j);
-
-
-                     // if the pixel to the left is set, add to neighbors
-                     if( j>0 && row[j-1] ) {
-                        neighbors[id].push_back(ids_row[j-1]);
-                     } 
-
-                     // if there is a line above us...
-                     if( i>0 ) {
-                        // above left
-                        if( j>0 && row_b[j-1] ) {
-                           neighbors[id].push_back(ids.at<int>(i-1, j-1));
-                        }
-
-                        // above
-                        if( row_b[j] ) {
-                           neighbors[id].push_back(ids.at<int>(i-1, j));
-                        }
-
-                        // above right. BUG here?
-                        if( j<(edges.cols-1) && row_b[j+1] ) {
-                           neighbors[id].push_back(ids.at<int>(i-1, j+1));
-                        }
-                     } 
-
-                     // next id
-                     id++;
-                  }
-               }
-            }
-
-            printf("% 6d edge points\n", count);
-            ROS_ASSERT(id == count);
-
-            std::list<std::set<int> *> groups;
-            std::queue<int> todo;
-            std::set<int> * group;
-
-            int group_sum = 0;
-
-            // while we have unprocessed nodes
-            while(nodes.size() > 0) {
-               // get first node
-               int n = *(nodes.begin());
-               group = new std::set<int>();
-               todo.push(n);
-               nodes.erase(n);
-               group->insert(n);
-               group_sum++;
-               while( todo.size() > 0 ) {
-                  n = todo.front();
-                  for( std::list<int>::iterator itr = neighbors[n].begin();
-                        itr != neighbors[n].end(); itr++ ) {
-                     ROS_ASSERT(*itr != -1);
-                     if( ! group->count(*itr) && nodes.count(*itr) ) {
-                        todo.push(*itr);
-                        nodes.erase(*itr);
-
-                        group->insert(*itr);
-                        group_sum++;
-                     }
-                  }
-                  todo.pop();
-               }
-
-               groups.push_back(group);
-            }
-
-            printf("% 6zd groups\n", groups.size());
-            printf("% 6d group sum\n", group_sum);
-
-            // delete groups so we don't leak memory
-            for( std::list<std::set<int> *>::iterator itr = groups.begin();
-                  itr != groups.end(); itr++ ) {
-               delete *itr;
-            }
-            */
-
-            // count the number of resulting groups
-            /*
-            printf("% 6zd initial groups\n", group_num.size());
-            std::set<int> final_groups;
-            for( std::map<int, int>::iterator itr = group_num.begin(); 
-                  itr != group_num.end(); itr++ ) {
-
-               int g = itr->second;
-               while( g != group_num[g] ) g = group_num[g];
-               itr->second = g;
-
-               if( itr->first && !itr->second ) {
-                  printf("zero-id group detected");
-               }
-               final_groups.insert(itr->second);
-            }
-            printf("% 6zd condensed groups\n", final_groups.size());
+            //printf("% 6d groups\n", groups);
 
             // generate colors
             std::map<int, cv::Vec3b> colors;
             srand(0);
-            for( std::set<int>::iterator itr = final_groups.begin();
-                  itr != final_groups.end(); itr++ ) {
+            for( int i=0; i<groups+1; i++ ) {
                int a = rand();
                uchar r = a & 0xFF;
                uchar g = (a >> 8) & 0xFF;
@@ -244,34 +106,37 @@ class TargetsDetector {
                if( r < 20 ) r = 255 - r;
                if( g < 20 ) g = 255 - g;
                if( b < 20 ) b = 255 - b;
-               colors[*itr] = cv::Vec3b(r, g, b);
+               colors[i] = cv::Vec3b(r, g, b);
             }
-            // for color 0 to black (no edge group)
-            colors[0] = cv::Vec3b(0, 0, 0);
-            */
 
 
             // publish edge image for viewing
             cv_bridge::CvImage out;
             // output edges
+            /*
             out.encoding = enc::MONO8;
             out.header = cv_ptr->header;
             out.image = edges;
+            */
 
-            /*
             // output grouped and colored edges
             out.encoding = enc::BGR8;
             out.header = cv_ptr->header;
-            out.image.create(groups.rows, groups.cols, CV_8UC3);
-            for( int i=0; i<groups.rows; i++ ) {
-               int * group_row = groups.ptr<int>(i);
-               cv::Vec3b * out_row = out.image.ptr<cv::Vec3b>(i);
-               for( int j=0; j<groups.cols; j++ ) {
-                  int g = group_num[group_row[j]];
-                  out_row[j] = colors[g];
+            out.image.create(edges.rows, edges.cols, CV_8UC3);
+            out.image.setTo(0);
+
+            int color = 0;
+            for( int i = 0; 
+                  i < endBound && (contours[i] >= 0 || contours[i+1] >= 0); 
+                  i++ ) {
+               if( contours[i] >= 0 ) { 
+                  int j = contours[i] / width;
+                  int k = contours[i] % width;
+                  out.image.at<cv::Vec3b>(j, k) = colors[color];
+               } else {
+                  color++;
                }
             }
-            */
 
             image_pub_.publish(out.toImageMsg());
 

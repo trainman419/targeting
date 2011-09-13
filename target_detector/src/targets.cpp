@@ -7,6 +7,11 @@
  * Author: Austin Hendrix
  */
 
+#include <map>
+#include <set>
+#include <list>
+#include <queue>
+
 #include <ros/ros.h>
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
@@ -52,83 +57,165 @@ class TargetsDetector {
             cv::Canny(cv_ptr->image, edges, t1, t2);
 
             // loop on pixels in edge image
+
+
+            // Grouping algorithm by Michael LeKander <michaelll@michaelll.com>
+            int groups = 0;
+            int i, o, endBound = edges.rows * edges.cols;
+            int * contours = (int*)malloc(sizeof(int)*endBound + 1);
+            int *stack = contours, *queue = contours;
+            uchar * isWhite = edges.data;
+            int width = edges.cols;
+
+            for (i = 0; i < endBound; i++) {
+               if (isWhite[i]) {
+                  *stack++ = i;
+                  isWhite[i] = 0;
+
+                  for (o = *queue; queue != stack; o = *++queue) { 
+                     // all surrounding points
+                     for( int j=-1; j<=1; j++ ) {
+                        for( int k=-1; k<=1; k++ ) {
+                           int p = o + j + k*width;
+                           if( p%width == o%width + j ) {
+                              if( p >= 0 && p < endBound ) {
+                                 if( isWhite[p] ) {
+                                    *stack++ = p;
+                                    isWhite[p] = 0;
+                                 }
+                              }
+                           }
+                        }
+                     }
+                  }
+
+                  *stack++ = INT_MAX;
+                  queue++;
+                  groups++;
+               }
+            }
+
+            printf("% 6d groups\n", groups);
+
+            /*
             int i, j;
-            cv::Mat groups(edges.rows, edges.cols, CV_32S);
-            std::map<int, int> group_num;
-            int group = 0;
+            uchar * row = 0;
             int count = 0;
-            group_num[0] = 0; // no group
+            for( i=0; i<edges.rows; i++) {
+               row = edges.ptr<uchar>(i);
+               for( j=0; j<edges.cols; j++) {
+                  if( row[j] ) count++;
+               }
+            }
+
+
+            int id = 0;
+            // position of each node
+            std::vector<std::pair<int, int> > position(count);
+            // neighbor ids for each node
+            std::vector<std::list<int> > neighbors(count);
+            // set of all node ids (for later)
+            std::set<int> nodes;
+            // image-coordinate to ID map
+            cv::Mat ids(edges.rows, edges.cols, CV_32S);
 
             ROS_ASSERT(edges.type() == CV_8U);
             uchar * row_b = 0;
-            uchar * row = 0;
+            int * ids_row;
+            // for each pixel
             for( i=0; i<edges.rows; i++) {
                row_b = row;
                row = edges.ptr<uchar>(i);
-               int * group_row = groups.ptr<int>(i);
+               ids_row = ids.ptr<int>(i);
                for( j=0; j<edges.cols; j++) {
-                  group_row[j] = 0;
+                  ids_row[j] = -1;
                   if( row[j] ) {
-                     count++;
-                     // if the previous pixel in this row is set, add us to 
-                     //  that group
+                     // set ID into image
+                     ids_row[j] = id;
+                     // add to node set
+                     nodes.insert(id);
+                     // set position
+                     position[id] = std::pair<int, int>(i, j);
+
+
+                     // if the pixel to the left is set, add to neighbors
                      if( j>0 && row[j-1] ) {
-                        group_row[j] = group_row[j-1];
+                        neighbors[id].push_back(ids_row[j-1]);
                      } 
 
-                     // if the pixel above us is set, add us to that group
+                     // if there is a line above us...
                      if( i>0 ) {
-                        int f = -1;
                         // above left
-                        if( j>0 && row_b[j-1] ) f = j-1;
-                        // above
-                        else if( row_b[j] ) f = j;
-                        // above right. BUG here?
-                        else if( j<(edges.cols-1) && row_b[j+1] ) f = j+1;
-
-                        if( f > -1 ) {
-                           int g = groups.at<int>(i-1, f);
-                           // if this point is already in a group; rename its 
-                           // group to match the other group
-                           //  this effectively merges two groups
-                           if( group_row[j] && group_row[j] != g ) {
-                              int a = group_num[group_row[j]];
-                              int n = a < group_num[g] ? a : group_num[g];
-                              group_num[group_row[j]] = n;
-                              group_num[g] = n;
-                           } else {
-                              group_row[j] = group_num[g];
-                           }
+                        if( j>0 && row_b[j-1] ) {
+                           neighbors[id].push_back(ids.at<int>(i-1, j-1));
                         }
 
-                        if( j<(edges.cols-1) && row_b[j+1] && f == j-1 ) {
-                           printf(".");
-                           int g1 = groups.at<int>(i-1, j-1);
-                           int g2 = groups.at<int>(i-1, j+1);
-                           int g3 = group_row[j];
-                           int n = group_num[g1];
-                           n = n < group_num[g2] ? n : group_num[g2];
-                           n = n < group_num[g3] ? n : group_num[g3];
-                           group_num[g1] = n;
-                           group_num[g2] = n;
-                           group_num[g3] = n;
+                        // above
+                        if( row_b[j] ) {
+                           neighbors[id].push_back(ids.at<int>(i-1, j));
+                        }
+
+                        // above right. BUG here?
+                        if( j<(edges.cols-1) && row_b[j+1] ) {
+                           neighbors[id].push_back(ids.at<int>(i-1, j+1));
                         }
                      } 
 
-                     // if we didn't find a group, create a new one
-                     if( ! group_row[j] ) {
-                        group++;
-                        group_num[group] = group;
-                        group_row[j] = group;
-                     }
+                     // next id
+                     id++;
                   }
                }
             }
-            printf("\n");
 
             printf("% 6d edge points\n", count);
+            ROS_ASSERT(id == count);
+
+            std::list<std::set<int> *> groups;
+            std::queue<int> todo;
+            std::set<int> * group;
+
+            int group_sum = 0;
+
+            // while we have unprocessed nodes
+            while(nodes.size() > 0) {
+               // get first node
+               int n = *(nodes.begin());
+               group = new std::set<int>();
+               todo.push(n);
+               nodes.erase(n);
+               group->insert(n);
+               group_sum++;
+               while( todo.size() > 0 ) {
+                  n = todo.front();
+                  for( std::list<int>::iterator itr = neighbors[n].begin();
+                        itr != neighbors[n].end(); itr++ ) {
+                     ROS_ASSERT(*itr != -1);
+                     if( ! group->count(*itr) && nodes.count(*itr) ) {
+                        todo.push(*itr);
+                        nodes.erase(*itr);
+
+                        group->insert(*itr);
+                        group_sum++;
+                     }
+                  }
+                  todo.pop();
+               }
+
+               groups.push_back(group);
+            }
+
+            printf("% 6zd groups\n", groups.size());
+            printf("% 6d group sum\n", group_sum);
+
+            // delete groups so we don't leak memory
+            for( std::list<std::set<int> *>::iterator itr = groups.begin();
+                  itr != groups.end(); itr++ ) {
+               delete *itr;
+            }
+            */
 
             // count the number of resulting groups
+            /*
             printf("% 6zd initial groups\n", group_num.size());
             std::set<int> final_groups;
             for( std::map<int, int>::iterator itr = group_num.begin(); 
@@ -161,17 +248,17 @@ class TargetsDetector {
             }
             // for color 0 to black (no edge group)
             colors[0] = cv::Vec3b(0, 0, 0);
+            */
 
 
             // publish edge image for viewing
             cv_bridge::CvImage out;
-            /*
             // output edges
             out.encoding = enc::MONO8;
             out.header = cv_ptr->header;
             out.image = edges;
-            */
 
+            /*
             // output grouped and colored edges
             out.encoding = enc::BGR8;
             out.header = cv_ptr->header;
@@ -184,6 +271,7 @@ class TargetsDetector {
                   out_row[j] = colors[g];
                }
             }
+            */
 
             image_pub_.publish(out.toImageMsg());
 

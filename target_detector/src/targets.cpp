@@ -47,7 +47,7 @@ class TargetsDetector {
          ROS_INFO("Reconfigured to %lf %lf", t1, t2);
       }
 
-      void fitEllipse() {
+      void fitEllipse(std::vector<cv::Point> &points) {
          // thoughts on ellipse-fitting
          // if it's really an ellipse, the center will be an average of all
          // points
@@ -58,6 +58,23 @@ class TargetsDetector {
          // 
          // it might be worth considering transforming the input points
          // into an r-theta space and fitting a sinusoid
+
+         std::vector<cv::Point>::iterator itr;
+
+         // derive center of point cluster
+         float x=0, y=0;
+         for( itr = points.begin(); itr != points.end(); ++itr ) {
+            x += itr->x;
+            y += itr->y;
+         }
+         x /= points.size();
+         y /= points.size();
+
+         // equation for ellipse in polar coordinates:
+         // r(t) = (R)^2 + 2dR * cos(2t) + d^2
+         //
+         // equation for ellipse in cartesian coordinates:
+         // (x/a)^2 + (y/b)^2 = 1
       }
 
       void imageCb(const sensor_msgs::ImageConstPtr & msg) {

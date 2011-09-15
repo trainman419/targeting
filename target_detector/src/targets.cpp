@@ -47,6 +47,19 @@ class TargetsDetector {
          ROS_INFO("Reconfigured to %lf %lf", t1, t2);
       }
 
+      void fitEllipse() {
+         // thoughts on ellipse-fitting
+         // if it's really an ellipse, the center will be an average of all
+         // points
+         //
+         // once we have the center, we ought to be able to derive the angles
+         // of the major and minor axes, do some sort of compromise, and
+         // then derive the length of the major and minor axes
+         // 
+         // it might be worth considering transforming the input points
+         // into an r-theta space and fitting a sinusoid
+      }
+
       void imageCb(const sensor_msgs::ImageConstPtr & msg) {
          cv_bridge::CvImagePtr cv_ptr;
          try {

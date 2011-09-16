@@ -181,6 +181,8 @@ class TargetsDetector {
 
             image_pub_.publish(out.toImageMsg());
 
+            free(contours);
+
          } catch(cv_bridge::Exception &e) {
             ROS_ERROR("cv_Bridge exception: %s", e.what());
          }

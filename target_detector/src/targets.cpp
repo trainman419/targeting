@@ -42,6 +42,7 @@ class TargetsDetector {
          image_pub_ = it_.advertise("out", 1);
       }
 
+      // dynamic-reconfigure callback
       void dyn_callback(target_detector::TargetDetectorConfig & config, 
             uint32_t level) {
          // this probably isn't thread-safe and I DON'T CARE
@@ -62,51 +63,6 @@ class TargetsDetector {
             float error;
             Ellipse(cv::Point c, float e) : center(c), error(e) {}
       };
-
-      Ellipse fitEllipse(std::vector<cv::Point> &points) {
-         // thoughts on ellipse-fitting
-         // if it's really an ellipse, the center will be an average of all
-         // points
-         //
-         // once we have the center, we ought to be able to derive the angles
-         // of the major and minor axes, do some sort of compromise, and
-         // then derive the length of the major and minor axes
-         // 
-         // it might be worth considering transforming the input points
-         // into an r-theta space and fitting a sinusoid
-
-         std::vector<cv::Point>::iterator itr;
-
-         // derive center of point cluster
-         cv::Point center;
-         for( itr = points.begin(); itr != points.end(); ++itr ) {
-            center.x += itr->x;
-            center.y += itr->y;
-         }
-         center.x /= points.size();
-         center.y /= points.size();
-
-         // equation for ellipse in polar coordinates:
-         // r(t) = (R)^2 + 2dR * cos(2t) + d^2
-         //
-         // equation for ellipse in cartesian coordinates:
-         // (x/a)^2 + (y/b)^2 = 1
-         float radius = 0;
-         for( itr = points.begin(); itr != points.end(); ++itr ) {
-            radius += dist(center, *itr);
-         }
-         radius /= points.size();
-
-         float error = 0;
-         for( itr = points.begin(); itr != points.end(); ++itr ) {
-            float d = radius - dist(center, *itr);
-            error += (d * d);
-         }
-         error /= points.size();
-         error = sqrt(error);
-         error /= radius;
-         return Ellipse(center, error);
-      }
 
       // average RMS error
       float ellipseError(cv::RotatedRect rect, std::vector<cv::Point> &points){
@@ -202,11 +158,6 @@ class TargetsDetector {
                      cv::RotatedRect ellipse = cv::fitEllipse(cv::Mat(points));
 
                      float error = ellipseError(ellipse, points);
-                     //Ellipse e = fitEllipse(points);
-                     /*
-                     printf("Fitted ellipse at (%03.5f, %03.5f)\n", 
-                           center.x, center.y);
-                           */
                      // TODO: determine quality of fit; either write custom
                      // fitting algorithm or measure fit.
                      // TODO: only consider ellipses that fit "well"
@@ -219,9 +170,6 @@ class TargetsDetector {
                   points.clear();
                }
             }
-            //printf("\n");
-
-            //printf("% 6d groups\n", groups);
             printf("Fit %zd ellipses\n", ellipses.size());
 
             // gather center points

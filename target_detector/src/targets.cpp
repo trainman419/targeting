@@ -30,6 +30,7 @@ class TargetsDetector {
    image_transport::ImageTransport it_;
    image_transport::Subscriber image_sub_;
    image_transport::Publisher image_pub_;
+   image_transport::Publisher edges_pub_;
 
    double t1;
    double t2;
@@ -40,6 +41,7 @@ class TargetsDetector {
       TargetsDetector() : it_(nh_), t1(300.0), t2(150.0), allowed_error(10) {
          image_sub_ = it_.subscribe("in", 1, &TargetsDetector::imageCb, this);
          image_pub_ = it_.advertise("out", 1);
+         edges_pub_ = it_.advertise("edges", 1);
       }
 
       // dynamic-reconfigure callback
@@ -146,43 +148,45 @@ class TargetsDetector {
       }
 
       void falseColorGroups(groups g, std_msgs::Header header, int h, int w) {
-         // generate colors
-         std::map<int, cv::Vec3b> colors;
-         srand(0);
-         for( int i=0; i<g.count+1; i++ ) {
-            int a = rand();
-            uchar r = a & 0xFF;
-            uchar g = (a >> 8) & 0xFF;
-            uchar b = (a >> 16) & 0xFF;
-            if( r < 20 ) r = 255 - r;
-            if( g < 20 ) g = 255 - g;
-            if( b < 20 ) b = 255 - b;
-            colors[i] = cv::Vec3b(r, g, b);
-         }
-
-         // publish edge image for viewing
-         cv_bridge::CvImage out;
-
-         // output grouped and colored edges
-         out.encoding = enc::BGR8;
-         out.header = header;
-         out.image.create(h, w, CV_8UC3);
-         out.image.setTo(0);
-
-         int color = 0;
-         for( int i = 0; 
-               i < g.end && (g.contours[i] >= 0 || g.contours[i+1] >= 0); 
-               i++ ) {
-            if( g.contours[i] >= 0 ) { 
-               int j = g.contours[i] / w;
-               int k = g.contours[i] % w;
-               out.image.at<cv::Vec3b>(j, k) = colors[color];
-            } else {
-               color++;
+         if( edges_pub_.getNumSubscribers() > 0 ) {
+            // generate colors
+            std::map<int, cv::Vec3b> colors;
+            srand(0);
+            for( int i=0; i<g.count+1; i++ ) {
+               int a = rand();
+               uchar r = a & 0xFF;
+               uchar g = (a >> 8) & 0xFF;
+               uchar b = (a >> 16) & 0xFF;
+               if( r < 20 ) r = 255 - r;
+               if( g < 20 ) g = 255 - g;
+               if( b < 20 ) b = 255 - b;
+               colors[i] = cv::Vec3b(r, g, b);
             }
-         }
 
-         //edges_pub_.publish(out.toImageMsg());
+            // publish edge image for viewing
+            cv_bridge::CvImage out;
+
+            // output grouped and colored edges
+            out.encoding = enc::BGR8;
+            out.header = header;
+            out.image.create(h, w, CV_8UC3);
+            out.image.setTo(0);
+
+            int color = 0;
+            for( int i = 0; 
+                  i < g.end && (g.contours[i] >= 0 || g.contours[i+1] >= 0); 
+                  i++ ) {
+               if( g.contours[i] >= 0 ) { 
+                  int j = g.contours[i] / w;
+                  int k = g.contours[i] % w;
+                  out.image.at<cv::Vec3b>(j, k) = colors[color];
+               } else {
+                  color++;
+               }
+            }
+
+            edges_pub_.publish(out.toImageMsg());
+         }
       }
 
       void imageCb(const sensor_msgs::ImageConstPtr & msg) {

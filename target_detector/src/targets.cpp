@@ -94,6 +94,97 @@ class TargetsDetector {
          return err;
       }
 
+      struct groups {
+         int * contours;
+         int end;
+         int count;
+      };
+
+      // Grouping algorithm by Michael LeKander <michaelll@michaelll.com>
+      groups extractContours(cv::Mat edges) {
+         int count = 0;
+         int i, o, endBound = edges.rows * edges.cols;
+         int * contours = (int*)malloc((sizeof(int)*endBound) + 2);
+         int *stack = contours, *queue = contours;
+         uchar * isWhite = edges.data;
+         int width = edges.cols;
+
+         for (i = 0; i < endBound; i++) {
+            if (isWhite[i]) {
+               *stack++ = i;
+               isWhite[i] = 0;
+
+               for (o = *queue; queue != stack; o = *++queue) { 
+                  // all surrounding points
+                  for( int j=-1; j<=1; j++ ) {
+                     for( int k=-1; k<=1; k++ ) {
+                        int p = o + j + k*width;
+                        if( p%width == o%width + j ) {
+                           if( p >= 0 && p < endBound ) {
+                              if( isWhite[p] ) {
+                                 *stack++ = p;
+                                 isWhite[p] = 0;
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+
+               *stack++ = -1;
+               queue++;
+               count++;
+            }
+         }
+         *stack++ = -1;
+
+         groups g;
+         g.contours = contours;
+         g.end = endBound;
+         g.count = count;
+         return g;
+      }
+
+      void falseColorGroups(groups g, std_msgs::Header header, int h, int w) {
+         // generate colors
+         std::map<int, cv::Vec3b> colors;
+         srand(0);
+         for( int i=0; i<g.count+1; i++ ) {
+            int a = rand();
+            uchar r = a & 0xFF;
+            uchar g = (a >> 8) & 0xFF;
+            uchar b = (a >> 16) & 0xFF;
+            if( r < 20 ) r = 255 - r;
+            if( g < 20 ) g = 255 - g;
+            if( b < 20 ) b = 255 - b;
+            colors[i] = cv::Vec3b(r, g, b);
+         }
+
+         // publish edge image for viewing
+         cv_bridge::CvImage out;
+
+         // output grouped and colored edges
+         out.encoding = enc::BGR8;
+         out.header = header;
+         out.image.create(h, w, CV_8UC3);
+         out.image.setTo(0);
+
+         int color = 0;
+         for( int i = 0; 
+               i < g.end && (g.contours[i] >= 0 || g.contours[i+1] >= 0); 
+               i++ ) {
+            if( g.contours[i] >= 0 ) { 
+               int j = g.contours[i] / w;
+               int k = g.contours[i] % w;
+               out.image.at<cv::Vec3b>(j, k) = colors[color];
+            } else {
+               color++;
+            }
+         }
+
+         //edges_pub_.publish(out.toImageMsg());
+      }
+
       void imageCb(const sensor_msgs::ImageConstPtr & msg) {
          cv_bridge::CvImagePtr cv_ptr;
          try {
@@ -103,54 +194,21 @@ class TargetsDetector {
             cv::Mat edges;
             cv::Canny(cv_ptr->image, edges, t1, t2);
 
-            // Grouping algorithm by Michael LeKander <michaelll@michaelll.com>
-            int groups = 0;
-            int i, o, endBound = edges.rows * edges.cols;
-            int * contours = (int*)malloc((sizeof(int)*endBound) + 2);
-            int *stack = contours, *queue = contours;
-            uchar * isWhite = edges.data;
-            int width = edges.cols;
-
-            for (i = 0; i < endBound; i++) {
-               if (isWhite[i]) {
-                  *stack++ = i;
-                  isWhite[i] = 0;
-
-                  for (o = *queue; queue != stack; o = *++queue) { 
-                     // all surrounding points
-                     for( int j=-1; j<=1; j++ ) {
-                        for( int k=-1; k<=1; k++ ) {
-                           int p = o + j + k*width;
-                           if( p%width == o%width + j ) {
-                              if( p >= 0 && p < endBound ) {
-                                 if( isWhite[p] ) {
-                                    *stack++ = p;
-                                    isWhite[p] = 0;
-                                 }
-                              }
-                           }
-                        }
-                     }
-                  }
-
-                  *stack++ = -1;
-                  queue++;
-                  groups++;
-               }
-            }
-            *stack++ = -1;
+            // group points
+            groups g = extractContours(edges);
 
             // fit ellipses
+            int width = edges.cols;
             std::vector<cv::Point> points;
             std::list<cv::RotatedRect> ellipses;
             std::list<cv::Point2f> centers;
             for( int i=0; 
-                  i < endBound && (contours[i] >= 0 || contours[i+1] >= 0);
+                  i < g.end && (g.contours[i] >= 0 || g.contours[i+1] >= 0);
                   i++ ) {
-               if( contours[i] >= 0 ) {
+               if( g.contours[i] >= 0 ) {
                   // another point. add it
-                  int j = contours[i] / width;
-                  int k = contours[i] % width;
+                  int j = g.contours[i] / width;
+                  int k = g.contours[i] % width;
                   points.push_back(cv::Point(k, j));
                } else {
                   // fit ellipse; need at least 5 points
@@ -201,64 +259,6 @@ class TargetsDetector {
                }
             }
 
-            // generate colors
-            std::map<int, cv::Vec3b> colors;
-            srand(0);
-            for( int i=0; i<groups+1; i++ ) {
-               int a = rand();
-               uchar r = a & 0xFF;
-               uchar g = (a >> 8) & 0xFF;
-               uchar b = (a >> 16) & 0xFF;
-               if( r < 20 ) r = 255 - r;
-               if( g < 20 ) g = 255 - g;
-               if( b < 20 ) b = 255 - b;
-               colors[i] = cv::Vec3b(r, g, b);
-            }
-
-
-            // publish edge image for viewing
-            //cv_bridge::CvImage out;
-            // output edges
-            /*
-            out.encoding = enc::MONO8;
-            out.header = cv_ptr->header;
-            out.image = edges;
-            */
-
-
-            /*
-            // output grouped and colored edges
-            out.encoding = enc::BGR8;
-            out.header = cv_ptr->header;
-            out.image.create(edges.rows, edges.cols, CV_8UC3);
-            out.image.setTo(0);
-
-            int color = 0;
-            for( int i = 0; 
-                  i < endBound && (contours[i] >= 0 || contours[i+1] >= 0); 
-                  i++ ) {
-               if( contours[i] >= 0 ) { 
-                  int j = contours[i] / width;
-                  int k = contours[i] % width;
-                  out.image.at<cv::Vec3b>(j, k) = colors[color];
-               } else {
-                  color++;
-               }
-            }
-            */
-
-            // overlay ellipses
-            /*
-            for( std::list<cv::RotatedRect>::iterator itr = ellipses.begin();
-                  itr != ellipses.end(); itr++ ) {
-               cv::Size size;
-               size.width = round(itr->size.width * 0.5);
-               size.height = round(itr->size.height * 0.5);
-               cv::ellipse(out.image, itr->center, size, 
-                     itr->angle, 0, 360, CV_RGB(255, 255, 255), 1, CV_AA, 0);
-            }
-            */
-
             // republish original image
             cv_bridge::CvImagePtr out_ptr = cv_bridge::toCvCopy(msg, enc::BGR8);
 
@@ -278,17 +278,16 @@ class TargetsDetector {
                   a2.x += ll;
                   b1.y -= ll;
                   b2.y += ll;
-                  //cv::line(out.image, a1, a2, CV_RGB(0, 255, 0));
-                  //cv::line(out.image, b1, b2, CV_RGB(0, 255, 0));
                   cv::line(out_ptr->image, a1, a2, CV_RGB(0, 255, 0));
                   cv::line(out_ptr->image, b1, b2, CV_RGB(0, 255, 0));
                }
             }
 
-            //image_pub_.publish(out.toImageMsg());
             image_pub_.publish(out_ptr->toImageMsg());
 
-            free(contours);
+            falseColorGroups(g, cv_ptr->header, edges.rows, edges.cols);
+
+            free(g.contours);
 
          } catch(cv_bridge::Exception &e) {
             ROS_ERROR("cv_Bridge exception: %s", e.what());

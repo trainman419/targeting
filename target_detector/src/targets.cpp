@@ -342,8 +342,6 @@ class TargetsDetector {
 
             free(contours);
 
-            free(contours);
-
          } catch(cv_bridge::Exception &e) {
             ROS_ERROR("cv_Bridge exception: %s", e.what());
          }

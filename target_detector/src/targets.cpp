@@ -194,107 +194,126 @@ class TargetsDetector {
          try {
             cv_ptr = cv_bridge::toCvCopy(msg, enc::MONO8);
 
-            // detect edges in input image
-            cv::Mat edges;
-            cv::Canny(cv_ptr->image, edges, t1, t2);
+            std::list<cv::Point2f> centers = extractCenters(cv_ptr);
 
-            // group points
-            groups g = extractContours(edges);
+            publishCrosshairs(msg, centers);
+         } catch(cv_bridge::Exception &e) {
+            ROS_ERROR("cv_Bridge exception: %s", e.what());
+         }
+      }
 
-            // fit ellipses
-            int width = edges.cols;
-            std::vector<cv::Point> points;
-            std::list<cv::RotatedRect> ellipses;
-            std::list<cv::Point2f> centers;
-            for( int i=0; 
-                  i < g.end && (g.contours[i] >= 0 || g.contours[i+1] >= 0);
-                  i++ ) {
-               if( g.contours[i] >= 0 ) {
-                  // another point. add it
-                  int j = g.contours[i] / width;
-                  int k = g.contours[i] % width;
-                  points.push_back(cv::Point(k, j));
-               } else {
-                  // fit ellipse; need at least 5 points
-                  if( points.size() >= 5 ) {
-                     cv::RotatedRect ellipse = cv::fitEllipse(cv::Mat(points));
+      std::list<cv::Point2f> extractCenters(cv_bridge::CvImagePtr cv_ptr) {
+         // detect edges in input image
+         cv::Mat edges;
+         cv::Canny(cv_ptr->image, edges, t1, t2);
 
-                     float error = ellipseError(ellipse, points);
-                     // TODO: determine quality of fit; either write custom
-                     // fitting algorithm or measure fit.
-                     // TODO: only consider ellipses that fit "well"
-                     if( error < allowed_error ) {
-                        ellipses.push_back(ellipse);
-                        centers.push_back(ellipse.center);
-                     }
-                  }
+         // group points
+         groups g = extractContours(edges);
 
-                  points.clear();
-               }
-            }
-            printf("Fit %zd ellipses\n", ellipses.size());
+         // fit ellipses
+         int width = edges.cols;
+         std::vector<cv::Point> points;
+         std::list<cv::RotatedRect> ellipses;
+         std::list<cv::Point2f> centers;
+         for( int i=0; 
+               i < g.end && (g.contours[i] >= 0 || g.contours[i+1] >= 0);
+               i++ ) {
+            if( g.contours[i] >= 0 ) {
+               // another point. add it
+               int j = g.contours[i] / width;
+               int k = g.contours[i] % width;
+               points.push_back(cv::Point(k, j));
+            } else {
+               // fit ellipse; need at least 5 points
+               if( points.size() >= 5 ) {
+                  cv::RotatedRect ellipse = cv::fitEllipse(cv::Mat(points));
 
-            // gather center points
-            typedef std::list<std::pair<cv::Point2f, std::list<cv::Point2f> > > cgType;
-            cgType center_groups;
-            for( std::list<cv::Point2f>::iterator itr = centers.begin(); 
-                  itr != centers.end(); itr++ ) {
-               bool f = false;
-               for( cgType::iterator itr2 = center_groups.begin(); 
-                     itr2 != center_groups.end() && !f; ++itr2 ) {
-                  if( dist(*itr, itr2->first) < center_threshold ) {
-                     itr2->second.push_back(*itr);
-                     cv::Point2f avg;
-                     for( std::list<cv::Point2f>::iterator itr3 = itr2->second.begin(); itr3 != itr2->second.end(); ++itr3 ) {
-                        avg += *itr3;
-                     }
-                     avg.x /= itr2->second.size();
-                     avg.y /= itr2->second.size();
-                     itr2->first = avg;
-                     f = true;
+                  float error = ellipseError(ellipse, points);
+                  // TODO: determine quality of fit; either write custom
+                  // fitting algorithm or measure fit.
+                  // TODO: only consider ellipses that fit "well"
+                  if( error < allowed_error ) {
+                     ellipses.push_back(ellipse);
+                     centers.push_back(ellipse.center);
                   }
                }
-               // if we didn't find a group for this point, make a new one
-               if( !f ) {
-                  cv::Point2f avg = *itr;
-                  std::list<cv::Point2f> l;
-                  l.push_back(*itr);
-                  center_groups.push_back(std::pair<cv::Point2f, std::list<cv::Point2f> >(avg, l));
+
+               points.clear();
+            }
+         }
+         printf("Fit %zd ellipses\n", ellipses.size());
+
+         // gather center points
+         typedef std::list<std::pair<cv::Point2f, std::list<cv::Point2f> > > cgType;
+         cgType center_groups;
+         for( std::list<cv::Point2f>::iterator itr = centers.begin(); 
+               itr != centers.end(); itr++ ) {
+            bool f = false;
+            for( cgType::iterator itr2 = center_groups.begin(); 
+                  itr2 != center_groups.end() && !f; ++itr2 ) {
+               if( dist(*itr, itr2->first) < center_threshold ) {
+                  itr2->second.push_back(*itr);
+                  cv::Point2f avg;
+                  for( std::list<cv::Point2f>::iterator itr3 = itr2->second.begin(); itr3 != itr2->second.end(); ++itr3 ) {
+                     avg += *itr3;
+                  }
+                  avg.x /= itr2->second.size();
+                  avg.y /= itr2->second.size();
+                  itr2->first = avg;
+                  f = true;
                }
             }
+            // if we didn't find a group for this point, make a new one
+            if( !f ) {
+               cv::Point2f avg = *itr;
+               std::list<cv::Point2f> l;
+               l.push_back(*itr);
+               center_groups.push_back(std::pair<cv::Point2f, std::list<cv::Point2f> >(avg, l));
+            }
+         }
 
+         centers.clear();
+         // threshold on number of circles required for target
+         for( cgType::iterator itr = center_groups.begin(); 
+               itr != center_groups.end(); ++itr ) {
+            if( itr->second.size() > 2 ) { // TODO: remove magic
+               printf("Found target at %f %f with %zd ellipses\n", 
+                     itr->first.x, itr->first.y, itr->second.size());
+               centers.push_back(itr->first);
+            }
+         }
+
+         falseColorGroups(g, cv_ptr->header, edges.rows, edges.cols);
+
+         free(g.contours);
+
+         return centers;
+      }
+
+      void publishCrosshairs( const sensor_msgs::ImageConstPtr & msg, 
+            std::list<cv::Point2f> centers) {
+         if( image_pub_.getNumSubscribers() > 0 ) {
             // republish original image
             cv_bridge::CvImagePtr out_ptr = cv_bridge::toCvCopy(msg, enc::BGR8);
 
-            // threshold on number of circles required for target
-            // and draw them
+            // draw crosshairs at target centers
             static int ll = 5; // half line-length of center cross
-            for( cgType::iterator itr = center_groups.begin(); 
-                  itr != center_groups.end(); ++itr ) {
-               if( itr->second.size() > 2 ) { // TODO: remove magic
-                  printf("Found target at %f %f with %zd ellipses\n", 
-                        itr->first.x, itr->first.y, itr->second.size());
-                  cv::Point a1 = itr->first;
-                  cv::Point a2 = itr->first;
-                  cv::Point b1 = itr->first;
-                  cv::Point b2 = itr->first;
-                  a1.x -= ll;
-                  a2.x += ll;
-                  b1.y -= ll;
-                  b2.y += ll;
-                  cv::line(out_ptr->image, a1, a2, CV_RGB(0, 255, 0));
-                  cv::line(out_ptr->image, b1, b2, CV_RGB(0, 255, 0));
-               }
+            for( std::list<cv::Point2f>::iterator itr = centers.begin();
+                  itr != centers.end(); ++itr ) {
+               cv::Point a1 = *itr;
+               cv::Point a2 = *itr;
+               cv::Point b1 = *itr;
+               cv::Point b2 = *itr;
+               a1.x -= ll;
+               a2.x += ll;
+               b1.y -= ll;
+               b2.y += ll;
+               cv::line(out_ptr->image, a1, a2, CV_RGB(0, 255, 0));
+               cv::line(out_ptr->image, b1, b2, CV_RGB(0, 255, 0));
             }
 
+
             image_pub_.publish(out_ptr->toImageMsg());
-
-            falseColorGroups(g, cv_ptr->header, edges.rows, edges.cols);
-
-            free(g.contours);
-
-         } catch(cv_bridge::Exception &e) {
-            ROS_ERROR("cv_Bridge exception: %s", e.what());
          }
       }
 };

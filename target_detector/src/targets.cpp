@@ -19,6 +19,8 @@
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <sensor_msgs/Image.h>
+#include <pcl/io/pcd_io.h>
 
 #include <dynamic_reconfigure/server.h>
 #include <target_detector/TargetDetectorConfig.h>
@@ -32,6 +34,8 @@ class TargetsDetector {
    image_transport::Publisher image_pub_;
    image_transport::Publisher edges_pub_;
 
+   ros::Subscriber points_sub_;
+
    double t1;
    double t2;
    double allowed_error;
@@ -40,6 +44,8 @@ class TargetsDetector {
    public:
       TargetsDetector() : it_(nh_), t1(300.0), t2(150.0), allowed_error(10) {
          image_sub_ = it_.subscribe("in", 1, &TargetsDetector::imageCb, this);
+         points_sub_ = nh_.subscribe("points2", 1, &TargetsDetector::cloudCb, 
+               this);
          image_pub_ = it_.advertise("out", 1);
          edges_pub_ = it_.advertise("edges", 1);
       }
@@ -189,9 +195,10 @@ class TargetsDetector {
          }
       }
 
+      // image callback
       void imageCb(const sensor_msgs::ImageConstPtr & msg) {
-         cv_bridge::CvImagePtr cv_ptr;
          try {
+            cv_bridge::CvImagePtr cv_ptr;
             cv_ptr = cv_bridge::toCvCopy(msg, enc::MONO8);
 
             std::list<cv::Point2f> centers = extractCenters(cv_ptr);
@@ -199,6 +206,27 @@ class TargetsDetector {
             publishCrosshairs(msg, centers);
          } catch(cv_bridge::Exception &e) {
             ROS_ERROR("cv_Bridge exception: %s", e.what());
+         }
+      }
+
+      // point cloud callback
+      void cloudCb(const sensor_msgs::PointCloud2ConstPtr & cloud) {
+         if( (cloud->width * cloud->height) == 0 ) {
+            // not a dense cloud; return
+            return;
+         }
+         try {
+            sensor_msgs::ImagePtr image = boost::make_shared<sensor_msgs::Image>();
+            pcl::toROSMsg( *cloud, *image );
+
+            cv_bridge::CvImagePtr cv_ptr;
+            cv_ptr = cv_bridge::toCvCopy(image, enc::MONO8);
+
+            std::list<cv::Point2f> centers = extractCenters(cv_ptr);
+
+            publishCrosshairs(image, centers);
+         } catch( std::runtime_error e ) {
+            ROS_ERROR_STREAM("Error in converting point cloud to image: " << e.what());
          }
       }
 
@@ -291,7 +319,7 @@ class TargetsDetector {
       }
 
       void publishCrosshairs( const sensor_msgs::ImageConstPtr & msg, 
-            std::list<cv::Point2f> centers) {
+            std::list<cv::Point2f> & centers) {
          if( image_pub_.getNumSubscribers() > 0 ) {
             // republish original image
             cv_bridge::CvImagePtr out_ptr = cv_bridge::toCvCopy(msg, enc::BGR8);

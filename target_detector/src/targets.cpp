@@ -20,10 +20,14 @@
 #include <sensor_msgs/image_encodings.h>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <sensor_msgs/Image.h>
+
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h>
 
 #include <dynamic_reconfigure/server.h>
 #include <target_detector/TargetDetectorConfig.h>
+#include <target_detector/PointArray.h>
 
 namespace enc = sensor_msgs::image_encodings;
 
@@ -35,6 +39,7 @@ class TargetsDetector {
    image_transport::Publisher edges_pub_;
 
    ros::Subscriber points_sub_;
+   ros::Publisher targets_pub_;
 
    double t1;
    double t2;
@@ -48,6 +53,7 @@ class TargetsDetector {
                this);
          image_pub_ = it_.advertise("out", 1);
          edges_pub_ = it_.advertise("edges", 1);
+         targets_pub_ = nh_.advertise<target_detector::PointArray>("targets", 1);
       }
 
       // dynamic-reconfigure callback
@@ -223,6 +229,27 @@ class TargetsDetector {
             cv_ptr = cv_bridge::toCvCopy(image, enc::MONO8);
 
             std::list<cv::Point2f> centers = extractCenters(cv_ptr);
+
+            // TODO: extract depth to points
+            pcl::PointCloud<pcl::PointXYZ> depth;
+            pcl::fromROSMsg( *cloud, depth);
+
+            // TODO: find appropriate output data type
+            // many PointStamped on one topic?
+            target_detector::PointArray targets;
+            for( std::list<cv::Point2f>::iterator itr = centers.begin();
+                  itr != centers.end(); ++itr ) {
+               unsigned int x = itr->x;
+               unsigned int y = itr->y;
+               if( x > depth.width )  x = depth.width;
+               if( y > depth.height ) y = depth.height;
+               pcl::PointXYZ p1 = depth.at(x, y);
+               geometry_msgs::Point p2;
+               p2.x = p1.x; p2.y = p1.y; p2.z = p1.z;
+               ROS_INFO("Target point at (%lf, %lf, %lf)", p2.x, p2.y, p2.z);
+               targets.points.push_back(p2);
+            }
+            targets_pub_.publish(targets);
 
             publishCrosshairs(image, centers);
          } catch( std::runtime_error e ) {

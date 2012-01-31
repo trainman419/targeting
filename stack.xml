@@ -7,5 +7,6 @@
   <depend stack="ros" />
 
   <depend stack="driver_common"/>
+  <depend stack="ros_rocket"/>
 
 </stack>

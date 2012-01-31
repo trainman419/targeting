@@ -1,0 +1,17 @@
+<package>
+  <description brief="rocket_aim">
+
+     rocket_aim
+
+  </description>
+  <author></author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/rocket_aim</url>
+  <depend package="roscpp"/>
+  <depend package="rocket_msgs"/>
+  <depend package="target_detector"/>
+
+</package>
+
+

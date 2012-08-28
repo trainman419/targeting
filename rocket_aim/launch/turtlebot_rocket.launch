@@ -1,0 +1,12 @@
+<launch>
+   <node pkg="target_detector" type="targets" name="targets">
+      <remap from="points2" to="camera/rgb/points"/>
+   </node>
+
+   <node pkg="rocket_driver" type="rocket_driver.py" name="rocket_driver"/>
+   <node pkg="rocket_aim" type="rocket_aim" name="rocket_aim">
+      <param name="x_offset" value="0.08"/>
+      <param name="y_offset" value="0.05"/>
+      <param name="z_offset" value="0.05"/>
+   </node>
+</launch>

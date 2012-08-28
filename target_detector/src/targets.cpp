@@ -84,7 +84,7 @@ class TargetsDetector {
          float a = rect.size.width / 2.0f;
          float b = rect.size.height / 2.0f;
          float angle = (90.0 + rect.angle) * M_PI / 180.0;
-         ROS_ASSERT(a > b);
+         //ROS_ASSERT(a >= b);
 
          float err = 0;
          float theta_max = 0;
@@ -241,13 +241,24 @@ class TargetsDetector {
                   itr != centers.end(); ++itr ) {
                unsigned int x = itr->x;
                unsigned int y = itr->y;
-               if( x > depth.width )  x = depth.width;
-               if( y > depth.height ) y = depth.height;
+               int dx[] = { 0, 1, 0, -1 };
+               int dy[] = { 1, 0, -1, 0 };
+               if( x >= depth.width ) x = depth.width-1;
+               if( x == depth.width - 1 ) dx[1] = 0;
+               if( y >= depth.height ) y = depth.height-1;
+               if( y == depth.height - 1) dy[0] = 0;
+               if( 0 == x ) dx[3] = 0;
+               if( 0 == y ) dy[2] = 0;
                pcl::PointXYZ p1 = depth.at(x, y);
+               for( int i=0; isnan(p1.x) && i < 4; ++i ) {
+                  p1 = depth.at(x + dx[i], y + dy[i]);
+               }
                geometry_msgs::Point p2;
                p2.x = p1.x; p2.y = p1.y; p2.z = p1.z;
                ROS_INFO("Target point at (%lf, %lf, %lf)", p2.x, p2.y, p2.z);
-               targets.points.push_back(p2);
+               if( ! isnan(p2.x) ) {
+                  targets.points.push_back(p2);
+               }
             }
             targets_pub_.publish(targets);
 

@@ -1,0 +1,51 @@
+%!
+%
+% Postscript to generate targets
+%
+
+/in {72 mul} def
+
+/w 8.5 in def
+/h 11 in def
+
+/margin 0.5 in def
+
+/circledict 1 dict def
+
+/circle {
+   circledict begin
+      /gray exch def
+      newpath
+      0
+      360 
+      arc
+      closepath
+      gray setgray
+      fill
+   end
+} def
+
+/targetdict 4 dict def
+
+/target {
+   targetdict begin
+      /radius exch def
+      /y exch def
+      /x exch def
+      radius -1 in 0 {
+         /r exch def
+         x y r 0 circle
+         x y r 0.5 in sub 1.0 circle
+      } for
+   end
+} def
+
+/r 1.75 in def
+
+w 2 div h 2 div r target
+margin r add margin r add r target
+w margin sub r sub h margin sub r sub r target
+margin r add h margin sub r sub r target
+w margin sub r sub margin r add r target
+
+showpage
